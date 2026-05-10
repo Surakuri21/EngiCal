@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
                 MainAppScreen()
             }
         }
-    }
+    } 
 }
 
 @Composable
@@ -177,67 +177,113 @@ class CalculatorViewModel : ViewModel() {
     private val _display = MutableStateFlow("0")
     val display: StateFlow<String> = _display.asStateFlow()
 
-    private var firstOperand: Double? = null
-    private var currentOperator: String? = null
-    private var isNewNumber = true
-
     fun onAction(action: String) {
+        val current = _display.value
+
         when (action) {
-            "C" -> {
-                _display.value = "0"
-                firstOperand = null
-                currentOperator = null
-                isNewNumber = true
-            }
+            "C" -> _display.value = "0"
             "BACKSPACE" -> {
-                val current = _display.value
-                if (current.length > 1) _display.value = current.dropLast(1) else _display.value = "0"
+                if (current == "Error") _display.value = "0"
+                else if (current.length > 1) _display.value = current.dropLast(1) 
+                else _display.value = "0"
+            }
+            "=" -> {
+                try {
+                    val result = evaluateMathExpression(current)
+                    _display.value = formatResult(result)
+                } catch (e: Exception) {
+                    _display.value = "Error"
+                }
+            }
+            "%" -> {
+                try {
+                    val result = evaluateMathExpression(current) / 100.0
+                    _display.value = formatResult(result)
+                } catch (e: Exception) {
+                    _display.value = "Error"
+                }
             }
             "+/-" -> {
-                val current = _display.value
-                if (current != "0") {
+                if (current != "0" && current != "Error") {
                     _display.value = if (current.startsWith("-")) current.removePrefix("-") else "-$current"
                 }
             }
-            "." -> {
-                if (!_display.value.contains(".")) {
-                    _display.value += "."
-                    isNewNumber = false
+            "()" -> {
+                val openCount = current.count { it == '(' }
+                val closeCount = current.count { it == ')' }
+                if (openCount == closeCount || current.last() == '(' || current.last() in listOf('+', '−', '×', '÷')) {
+                    _display.value = if (current == "0") "(" else "$current("
+                } else {
+                    _display.value = "$current)"
                 }
             }
-            "÷", "×", "−", "+" -> {
-                firstOperand = _display.value.toDoubleOrNull()
-                currentOperator = action
-                isNewNumber = true
-            }
-            "=" -> {
-                val secondOperand = _display.value.toDoubleOrNull()
-                if (firstOperand != null && secondOperand != null && currentOperator != null) {
-                    val result = when (currentOperator) {
-                        "+" -> firstOperand!! + secondOperand
-                        "−" -> firstOperand!! - secondOperand
-                        "×" -> firstOperand!! * secondOperand
-                        "÷" -> if (secondOperand == 0.0) Double.NaN else firstOperand!! / secondOperand
-                        else -> 0.0
-                    }
-                    _display.value = if (result % 1.0 == 0.0) result.toInt().toString() else result.toString()
-                    firstOperand = null
-                    currentOperator = null
-                    isNewNumber = true
-                }
-            }
-            "()", "%" -> { /* To be added later */ }
-            else -> {
-                _display.update { current ->
-                    if (isNewNumber || current == "0") {
-                        isNewNumber = false
-                        action
-                    } else {
-                        current + action
-                    }
+            else -> { 
+                if (current == "0" && action !in listOf("÷", "×", "−", "+", ".")) {
+                    _display.value = action
+                } else if (current == "Error") {
+                    _display.value = action
+                } else {
+                    _display.value = current + action
                 }
             }
         }
+    }
+
+    private fun formatResult(result: Double): String {
+        return if (result % 1.0 == 0.0) result.toLong().toString() else result.toString()
+    }
+
+    private fun evaluateMathExpression(str: String): Double {
+        val cleanStr = str.replace("×", "*").replace("÷", "/").replace("−", "-")
+        
+        return object : Any() {
+            var pos = -1
+            var ch = 0
+            fun nextChar() { ch = if (++pos < cleanStr.length) cleanStr[pos].code else -1 }
+            fun eat(charToEat: Int): Boolean {
+                while (ch == ' '.code) nextChar()
+                if (ch == charToEat) { nextChar(); return true }
+                return false
+            }
+            fun parse(): Double {
+                nextChar()
+                val x = parseExpression()
+                if (pos < cleanStr.length) throw RuntimeException("Unexpected: " + ch.toChar())
+                return x
+            }
+            fun parseExpression(): Double {
+                var x = parseTerm()
+                while (true) {
+                    if (eat('+'.code)) x += parseTerm() 
+                    else if (eat('-'.code)) x -= parseTerm()
+                    else return x
+                }
+            }
+            fun parseTerm(): Double {
+                var x = parseFactor()
+                while (true) {
+                    if (eat('*'.code)) x *= parseFactor()
+                    else if (eat('/'.code)) x /= parseFactor()
+                    else return x
+                }
+            }
+            fun parseFactor(): Double {
+                if (eat('+'.code)) return parseFactor()
+                if (eat('-'.code)) return -parseFactor()
+                var x: Double
+                val startPos = this.pos
+                if (eat('('.code)) {
+                    x = parseExpression()
+                    eat(')'.code)
+                } else if ((ch >= '0'.code && ch <= '9'.code) || ch == '.'.code) {
+                    while ((ch >= '0'.code && ch <= '9'.code) || ch == '.'.code) nextChar()
+                    x = cleanStr.substring(startPos, this.pos).toDouble()
+                } else {
+                    throw RuntimeException("Unexpected: " + ch.toChar())
+                }
+                return x
+            }
+        }.parse()
     }
 }
 
