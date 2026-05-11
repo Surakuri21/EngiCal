@@ -5,10 +5,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Architecture
 import androidx.compose.material.icons.filled.Backspace
@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -100,28 +101,74 @@ fun MainAppScreen() {
 @Composable
 fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
     val display by viewModel.display.collectAsState()
+    val liveResult by viewModel.liveResult.collectAsState()
     val scrollState = rememberScrollState()
+
+    LaunchedEffect(display) { scrollState.animateScrollTo(scrollState.maxValue) }
+
+    // Read the screen width to scale the breakpoints
+    val screenWidth = LocalConfiguration.current.screenWidthDp
+    val scale = screenWidth / 360.0 // Normalizes based on a standard phone width
+
+    // STAGE 1: Aggressive Shrinking
+    // It drops to 32.sp (Answer Size) very quickly to avoid wrapping early!
+    val mainTextSize =
+            when {
+                display.length > 14 * scale -> 32.sp // Locks into the small size
+                display.length > 9 * scale -> 44.sp
+                display.length > 6 * scale -> 56.sp
+                else -> 72.sp // Starting size
+            }
+
+    // STAGE 2: The "Give Way" trigger
+    // If the equation is longer than ~35 characters, we will hide the ghost answer.
+    val isMassiveInput = display.length > 35 * scale
 
     Column(
             modifier =
                     Modifier.fillMaxSize()
                             .background(Color.Black)
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp),
             verticalArrangement = Arrangement.Bottom
     ) {
-        // Top Display Area (Now with scrolling!)
-        Text(
-                text = display,
-                fontSize = 72.sp,
-                fontWeight = FontWeight.Light,
-                color = Color.White,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                modifier =
-                        Modifier.fillMaxWidth()
-                                .padding(bottom = 16.dp)
-                                .horizontalScroll(scrollState)
-        )
+
+        // Equation Display Area
+        Column(modifier = Modifier.fillMaxWidth().weight(1f).padding(bottom = 8.dp)) {
+            Spacer(modifier = Modifier.weight(1f)) // The Spring
+
+            Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(scrollState),
+                    horizontalAlignment = Alignment.End
+            ) {
+                Text(
+                        text = display,
+                        fontSize = mainTextSize,
+                        fontWeight = FontWeight.Light,
+                        color = Color.White,
+                        textAlign = TextAlign.End,
+                        lineHeight = (mainTextSize.value * 1.2).sp,
+                        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+                )
+            }
+        }
+
+        // STAGE 3: Conditionally render the Ghost Answer!
+        if (!isMassiveInput) {
+            // Show the answer normally for short/medium equations
+            Text(
+                    text = liveResult,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = Color.Gray,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            )
+        } else {
+            // HIDE the answer to give that space to the massive equation!
+            // We just leave a small 16.dp gap so the UI doesn't touch the utility bar.
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         // Utility Icons Row
         Row(
@@ -173,15 +220,14 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
                         listOf("+/-", "0", ".", "=")
                 )
 
-        buttons.forEach { row ->
+        buttons.forEachIndexed { index, row ->
             Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 row.forEach { symbol ->
                     val buttonBackground =
-                            if (symbol == "=") Color(0xFFFF9F0A)
-                            else Color(0xFF171717) // Orange Equal Button!
+                            if (symbol == "=") Color(0xFFFF9F0A) else Color(0xFF171717)
                     val textColor =
                             when (symbol) {
                                 "C" -> Color(0xFFE57373)
@@ -210,8 +256,13 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
+
+            if (index < buttons.size - 1) {
+                Spacer(modifier = Modifier.height(12.dp))
+            }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
     }
 }
 
@@ -220,11 +271,17 @@ class CalculatorViewModel : ViewModel() {
     private val _display = MutableStateFlow("0")
     val display: StateFlow<String> = _display.asStateFlow()
 
+    private val _liveResult = MutableStateFlow("")
+    val liveResult: StateFlow<String> = _liveResult.asStateFlow()
+
     fun onAction(action: String) {
         val current = _display.value
 
         when (action) {
-            "C" -> _display.value = "0"
+            "C" -> {
+                _display.value = "0"
+                _liveResult.value = ""
+            }
             "BACKSPACE" -> {
                 if (current == "Error") _display.value = "0"
                 else if (current.length > 1) _display.value = current.dropLast(1)
@@ -234,16 +291,20 @@ class CalculatorViewModel : ViewModel() {
                 try {
                     val result = evaluateMathExpression(current)
                     _display.value = formatResult(result)
+                    _liveResult.value = ""
                 } catch (e: Exception) {
                     _display.value = "Error"
+                    _liveResult.value = ""
                 }
             }
             "%" -> {
                 try {
                     val result = evaluateMathExpression(current) / 100.0
                     _display.value = formatResult(result)
+                    _liveResult.value = ""
                 } catch (e: Exception) {
                     _display.value = "Error"
+                    _liveResult.value = ""
                 }
             }
             "+/-" -> {
@@ -274,21 +335,38 @@ class CalculatorViewModel : ViewModel() {
                 } else if (current == "Error") {
                     _display.value = action
                 } else if (isOperator && isLastCharOperator) {
-                    // Replace old operator with the new one
                     _display.value = current.dropLast(1) + action
                 } else {
                     _display.value = current + action
                 }
             }
         }
+
+        if (action != "=" && action != "C" && action != "%") {
+            calculateLivePreview(_display.value)
+        }
+    }
+
+    private fun calculateLivePreview(expression: String) {
+        try {
+            if (expression.any { it in listOf('+', '−', '×', '÷') }) {
+                val result = evaluateMathExpression(expression)
+                _liveResult.value = "= " + formatResult(result)
+            } else {
+                _liveResult.value = ""
+            }
+        } catch (e: Exception) {
+            _liveResult.value = ""
+        }
     }
 
     private fun formatResult(result: Double): String {
-        return if (result % 1.0 == 0.0) result.toLong().toString() else result.toString()
+        val formatter = java.text.DecimalFormat("#,###.##########")
+        return formatter.format(result)
     }
 
     private fun evaluateMathExpression(str: String): Double {
-        val cleanStr = str.replace("×", "*").replace("÷", "/").replace("−", "-")
+        val cleanStr = str.replace("×", "*").replace("÷", "/").replace("−", "-").replace(",", "")
 
         return object : Any() {
                     var pos = -1
