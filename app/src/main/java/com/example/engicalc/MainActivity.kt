@@ -5,7 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Architecture
@@ -46,7 +48,6 @@ fun MainAppScreen() {
     var selectedItem by remember { mutableStateOf(0) }
 
     val items = listOf("Standard", "Engineering")
-    //  Real Material Design vector icon
     val itemIcons = listOf(Icons.Default.Calculate, Icons.Default.Architecture)
 
     Scaffold(
@@ -54,7 +55,6 @@ fun MainAppScreen() {
                 NavigationBar(containerColor = Color.Black, contentColor = Color.White) {
                     items.forEachIndexed { index, item ->
                         NavigationBarItem(
-                                // We use the Icon() component instead of the Text() component now
                                 icon = {
                                     Icon(
                                             imageVector = itemIcons[index],
@@ -78,10 +78,7 @@ fun MainAppScreen() {
                                                 selectedIconColor = Color.Black,
                                                 unselectedIconColor = Color.Gray,
                                                 selectedTextColor = Color.White,
-                                                indicatorColor =
-                                                        Color(
-                                                                0xFFFF9F0A
-                                                        ) // Samsung Orange highlight pill!
+                                                indicatorColor = Color(0xFFFF9F0A)
                                         )
                         )
                     }
@@ -98,10 +95,12 @@ fun MainAppScreen() {
         }
     }
 }
+
 // --- 2. THE SAMSUNG CALCULATOR UI ---
 @Composable
 fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
     val display by viewModel.display.collectAsState()
+    val scrollState = rememberScrollState()
 
     Column(
             modifier =
@@ -110,6 +109,7 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
                             .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.Bottom
     ) {
+        // Top Display Area (Now with scrolling!)
         Text(
                 text = display,
                 fontSize = 72.sp,
@@ -117,10 +117,13 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
                 color = Color.White,
                 textAlign = TextAlign.End,
                 maxLines = 1,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                modifier =
+                        Modifier.fillMaxWidth()
+                                .padding(bottom = 16.dp)
+                                .horizontalScroll(scrollState)
         )
 
-        // Utility Icons Row (History, Ruler, Sci-Calc, Backspace)
+        // Utility Icons Row
         Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -160,6 +163,7 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
                 modifier = Modifier.padding(bottom = 16.dp)
         )
 
+        // Grid Layout
         val buttons =
                 listOf(
                         listOf("C", "()", "%", "÷"),
@@ -176,7 +180,8 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
             ) {
                 row.forEach { symbol ->
                     val buttonBackground =
-                            if (symbol == "=") Color(0xFFD4D4D2) else Color(0xFF171717)
+                            if (symbol == "=") Color(0xFFFF9F0A)
+                            else Color(0xFF171717) // Orange Equal Button!
                     val textColor =
                             when (symbol) {
                                 "C" -> Color(0xFFE57373)
@@ -210,7 +215,7 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
     }
 }
 
-// --- 3. THE MATH LOGIC (ViewModel) ---
+// --- 3. THE UPGRADED MATH ENGINE (ViewModel) ---
 class CalculatorViewModel : ViewModel() {
     private val _display = MutableStateFlow("0")
     val display: StateFlow<String> = _display.asStateFlow()
@@ -260,10 +265,17 @@ class CalculatorViewModel : ViewModel() {
                 }
             }
             else -> {
-                if (current == "0" && action !in listOf("÷", "×", "−", "+", ".")) {
+                val isOperator = action in listOf("÷", "×", "−", "+", ".")
+                val lastChar = current.lastOrNull()?.toString()
+                val isLastCharOperator = lastChar in listOf("÷", "×", "−", "+", ".")
+
+                if (current == "0" && !isOperator) {
                     _display.value = action
                 } else if (current == "Error") {
                     _display.value = action
+                } else if (isOperator && isLastCharOperator) {
+                    // Replace old operator with the new one
+                    _display.value = current.dropLast(1) + action
                 } else {
                     _display.value = current + action
                 }
@@ -342,7 +354,12 @@ fun EngineeringScreen() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
     ) {
-        Text("📐", fontSize = 72.sp)
+        Icon(
+                imageVector = Icons.Default.Architecture,
+                contentDescription = "Engineering Tools",
+                tint = Color(0xFFFF9F0A),
+                modifier = Modifier.size(72.dp)
+        )
         Spacer(modifier = Modifier.height(16.dp))
         Text("Engineering Tools", fontSize = 28.sp, color = Color.White)
         Text("Coming Soon...", color = Color.Gray, modifier = Modifier.padding(top = 8.dp))
