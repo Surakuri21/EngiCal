@@ -1,5 +1,7 @@
 package com.example.engicalc
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,10 +20,12 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,7 +50,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainAppScreen() {
     val navController = rememberNavController()
-    var selectedItem by remember { mutableStateOf(0) }
+    // SURVIVES ROTATION:
+    var selectedItem by rememberSaveable { mutableStateOf(0) }
+
+    // SHARED BRAIN:
+    val sharedViewModel: CalculatorViewModel = viewModel()
 
     val items = listOf("Standard", "Engineering")
     val itemIcons = listOf(Icons.Default.Calculate, Icons.Default.Architecture)
@@ -58,7 +66,7 @@ fun MainAppScreen() {
                         NavigationBarItem(
                                 icon = {
                                     Icon(
-                                            imageVector = itemIcons[index],
+                                            itemIcons[index],
                                             contentDescription = item,
                                             modifier = Modifier.size(26.dp)
                                     )
@@ -91,37 +99,43 @@ fun MainAppScreen() {
                 startDestination = "calculator",
                 modifier = Modifier.padding(innerPadding).background(Color.Black)
         ) {
-            composable("calculator") { SamsungCalculatorScreen() }
+            composable("calculator") {
+                SamsungCalculatorScreen(
+                        viewModel = sharedViewModel,
+                        onScientificClick = { navController.navigate("scientific") }
+                )
+            }
             composable("engineering") { EngineeringScreen() }
+            composable("scientific") {
+                ScientificScreen(
+                        viewModel = sharedViewModel,
+                        onBackClick = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
 
 // --- 2. THE SAMSUNG CALCULATOR UI ---
 @Composable
-fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
+fun SamsungCalculatorScreen(viewModel: CalculatorViewModel, onScientificClick: () -> Unit) {
     val display by viewModel.display.collectAsState()
     val liveResult by viewModel.liveResult.collectAsState()
     val scrollState = rememberScrollState()
 
     LaunchedEffect(display) { scrollState.animateScrollTo(scrollState.maxValue) }
 
-    // Read the screen width to scale the breakpoints
     val screenWidth = LocalConfiguration.current.screenWidthDp
-    val scale = screenWidth / 360.0 // Normalizes based on a standard phone width
+    val scale = screenWidth / 360.0
 
-    // STAGE 1: Aggressive Shrinking
-    // It drops to 32.sp (Answer Size) very quickly to avoid wrapping early!
     val mainTextSize =
             when {
-                display.length > 14 * scale -> 32.sp // Locks into the small size
+                display.length > 14 * scale -> 32.sp
                 display.length > 9 * scale -> 44.sp
                 display.length > 6 * scale -> 56.sp
-                else -> 72.sp // Starting size
+                else -> 72.sp
             }
 
-    // STAGE 2: The "Give Way" trigger
-    // If the equation is longer than ~35 characters, we will hide the ghost answer.
     val isMassiveInput = display.length > 35 * scale
 
     Column(
@@ -131,11 +145,8 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
                             .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp),
             verticalArrangement = Arrangement.Bottom
     ) {
-
-        // Equation Display Area
         Column(modifier = Modifier.fillMaxWidth().weight(1f).padding(bottom = 8.dp)) {
-            Spacer(modifier = Modifier.weight(1f)) // The Spring
-
+            Spacer(modifier = Modifier.weight(1f))
             Column(
                     modifier = Modifier.fillMaxWidth().verticalScroll(scrollState),
                     horizontalAlignment = Alignment.End
@@ -152,9 +163,7 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
             }
         }
 
-        // STAGE 3: Conditionally render the Ghost Answer!
         if (!isMassiveInput) {
-            // Show the answer normally for short/medium equations
             Text(
                     text = liveResult,
                     fontSize = 32.sp,
@@ -165,12 +174,9 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
             )
         } else {
-            // HIDE the answer to give that space to the massive equation!
-            // We just leave a small 16.dp gap so the UI doesn't touch the utility bar.
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Utility Icons Row
         Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -178,26 +184,26 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                 Icon(
-                        imageVector = Icons.Default.History,
+                        Icons.Default.History,
                         contentDescription = "History",
                         tint = Color.LightGray,
                         modifier = Modifier.size(24.dp)
                 )
                 Icon(
-                        imageVector = Icons.Default.Straighten,
+                        Icons.Default.Straighten,
                         contentDescription = "Conversions",
                         tint = Color.LightGray,
                         modifier = Modifier.size(24.dp)
                 )
                 Icon(
-                        imageVector = Icons.Default.Functions,
+                        Icons.Default.Functions,
                         contentDescription = "Scientific",
                         tint = Color.LightGray,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp).clickable { onScientificClick() }
                 )
             }
             Icon(
-                    imageVector = Icons.Default.Backspace,
+                    Icons.Default.Backspace,
                     contentDescription = "Backspace",
                     tint = Color.LightGray,
                     modifier = Modifier.size(24.dp).clickable { viewModel.onAction("BACKSPACE") }
@@ -210,7 +216,6 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
                 modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // Grid Layout
         val buttons =
                 listOf(
                         listOf("C", "()", "%", "÷"),
@@ -226,53 +231,53 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel = viewModel()) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 row.forEach { symbol ->
-                    val buttonBackground =
-                            if (symbol == "=") Color(0xFFFF9F0A) else Color(0xFF171717)
-                    val textColor =
+                    val btnBg = if (symbol == "=") Color(0xFFFF9F0A) else Color(0xFF171717)
+                    val txtColor =
                             when (symbol) {
                                 "C" -> Color(0xFFE57373)
                                 "=" -> Color.Black
                                 "÷", "×", "−", "+" -> Color.White
                                 else -> Color.White
                             }
-                    val textWeight =
+                    val txtWeight =
                             if (symbol == "=" || symbol in listOf("÷", "×", "−", "+"))
                                     FontWeight.Normal
                             else FontWeight.Light
-
                     Button(
                             onClick = { viewModel.onAction(symbol) },
                             modifier = Modifier.weight(1f).aspectRatio(1f),
                             shape = CircleShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = buttonBackground),
+                            colors = ButtonDefaults.buttonColors(containerColor = btnBg),
                             contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
                                 text = symbol,
                                 fontSize = 32.sp,
-                                color = textColor,
-                                fontWeight = textWeight
+                                color = txtColor,
+                                fontWeight = txtWeight
                         )
                     }
                 }
             }
-
-            if (index < buttons.size - 1) {
-                Spacer(modifier = Modifier.height(12.dp))
-            }
+            if (index < buttons.size - 1) Spacer(modifier = Modifier.height(12.dp))
         }
-
         Spacer(modifier = Modifier.height(8.dp))
     }
 }
 
-// --- 3. THE UPGRADED MATH ENGINE (ViewModel) ---
+// --- 3. THE MATH ENGINE (ViewModel) ---
 class CalculatorViewModel : ViewModel() {
     private val _display = MutableStateFlow("0")
     val display: StateFlow<String> = _display.asStateFlow()
 
     private val _liveResult = MutableStateFlow("")
     val liveResult: StateFlow<String> = _liveResult.asStateFlow()
+
+    private val _isRadMode = MutableStateFlow(true)
+    val isRadMode: StateFlow<Boolean> = _isRadMode.asStateFlow()
+
+    private val _isInvMode = MutableStateFlow(false)
+    val isInvMode: StateFlow<Boolean> = _isInvMode.asStateFlow()
 
     fun onAction(action: String) {
         val current = _display.value
@@ -308,10 +313,10 @@ class CalculatorViewModel : ViewModel() {
                 }
             }
             "+/-" -> {
-                if (current != "0" && current != "Error") {
-                    _display.value =
-                            if (current.startsWith("-")) current.removePrefix("-") else "-$current"
-                }
+                if (current != "0" && current != "Error")
+                        _display.value =
+                                if (current.startsWith("-")) current.removePrefix("-")
+                                else "-$current"
             }
             "()" -> {
                 val openCount = current.count { it == '(' }
@@ -319,54 +324,80 @@ class CalculatorViewModel : ViewModel() {
                 if (openCount == closeCount ||
                                 current.last() == '(' ||
                                 current.last() in listOf('+', '−', '×', '÷')
-                ) {
-                    _display.value = if (current == "0") "(" else "$current("
-                } else {
-                    _display.value = "$current)"
-                }
+                )
+                        appendToDisplay("(")
+                else appendToDisplay(")")
             }
+            "rad" -> {
+                _isRadMode.value = !_isRadMode.value
+                return
+            }
+            "inv" -> {
+                _isInvMode.value = !_isInvMode.value
+                return
+            }
+            "sin" -> appendToDisplay(if (_isInvMode.value) "asin(" else "sin(")
+            "cos" -> appendToDisplay(if (_isInvMode.value) "acos(" else "cos(")
+            "tan" -> appendToDisplay(if (_isInvMode.value) "atan(" else "tan(")
+            "sinh" -> appendToDisplay("sinh(")
+            "cosh" -> appendToDisplay("cosh(")
+            "tanh" -> appendToDisplay("tanh(")
+            "ln" -> appendToDisplay("ln(")
+            "log" -> appendToDisplay("log(")
+            "√" -> appendToDisplay("√(")
+            "x²" -> appendToDisplay("^2")
+            "x³" -> appendToDisplay("^3")
+            "1/x" -> appendToDisplay("1/(")
+            "|x|" -> appendToDisplay("abs(")
+            "π", "e", "^", "!" -> appendToDisplay(action)
+            "rand" -> appendToDisplay("rand")
             else -> {
                 val isOperator = action in listOf("÷", "×", "−", "+", ".")
                 val lastChar = current.lastOrNull()?.toString()
                 val isLastCharOperator = lastChar in listOf("÷", "×", "−", "+", ".")
 
-                if (current == "0" && !isOperator) {
-                    _display.value = action
-                } else if (current == "Error") {
-                    _display.value = action
-                } else if (isOperator && isLastCharOperator) {
+                if (isOperator && isLastCharOperator) {
                     _display.value = current.dropLast(1) + action
                 } else {
-                    _display.value = current + action
+                    appendToDisplay(action)
                 }
             }
         }
 
-        if (action != "=" && action != "C" && action != "%") {
+        if (action != "=" && action != "C" && action != "%" && action != "rad" && action != "inv") {
             calculateLivePreview(_display.value)
         }
     }
 
+    private fun appendToDisplay(value: String) {
+        val current = _display.value
+        if (current == "0" || current == "Error") _display.value = value
+        else _display.value = current + value
+    }
+
     private fun calculateLivePreview(expression: String) {
         try {
-            if (expression.any { it in listOf('+', '−', '×', '÷') }) {
-                val result = evaluateMathExpression(expression)
-                _liveResult.value = "= " + formatResult(result)
-            } else {
-                _liveResult.value = ""
-            }
+            val result = evaluateMathExpression(expression)
+            _liveResult.value = "= " + formatResult(result)
         } catch (e: Exception) {
             _liveResult.value = ""
         }
     }
 
     private fun formatResult(result: Double): String {
+        if (result.isNaN() || result.isInfinite()) return "Error"
         val formatter = java.text.DecimalFormat("#,###.##########")
         return formatter.format(result)
     }
 
     private fun evaluateMathExpression(str: String): Double {
-        val cleanStr = str.replace("×", "*").replace("÷", "/").replace("−", "-").replace(",", "")
+        val cleanStr =
+                str.replace("×", "*")
+                        .replace("÷", "/")
+                        .replace("−", "-")
+                        .replace(",", "")
+                        .replace("√", "sqrt")
+                        .replace(Regex("([0-9])([a-zA-Zπ])"), "$1*$2")
 
         return object : Any() {
                     var pos = -1
@@ -414,13 +445,60 @@ class CalculatorViewModel : ViewModel() {
                         } else if ((ch >= '0'.code && ch <= '9'.code) || ch == '.'.code) {
                             while ((ch >= '0'.code && ch <= '9'.code) || ch == '.'.code) nextChar()
                             x = cleanStr.substring(startPos, this.pos).toDouble()
+                        } else if ((ch >= 'a'.code && ch <= 'z'.code) || ch == 'π'.code) {
+                            while ((ch >= 'a'.code && ch <= 'z'.code) || ch == 'π'.code) nextChar()
+                            val func = cleanStr.substring(startPos, this.pos)
+                            if (func == "π") return Math.PI
+                            if (func == "e") return Math.E
+                            if (func == "rand") return Math.random()
+                            x = parseFactor()
+                            val isRad = _isRadMode.value
+                            x =
+                                    when (func) {
+                                        "sqrt" -> Math.sqrt(x)
+                                        "sin" ->
+                                                if (isRad) Math.sin(x)
+                                                else Math.sin(Math.toRadians(x))
+                                        "cos" ->
+                                                if (isRad) Math.cos(x)
+                                                else Math.cos(Math.toRadians(x))
+                                        "tan" ->
+                                                if (isRad) Math.tan(x)
+                                                else Math.tan(Math.toRadians(x))
+                                        "asin" ->
+                                                if (isRad) Math.asin(x)
+                                                else Math.toDegrees(Math.asin(x))
+                                        "acos" ->
+                                                if (isRad) Math.acos(x)
+                                                else Math.toDegrees(Math.acos(x))
+                                        "atan" ->
+                                                if (isRad) Math.atan(x)
+                                                else Math.toDegrees(Math.atan(x))
+                                        "sinh" -> Math.sinh(x)
+                                        "cosh" -> Math.cosh(x)
+                                        "tanh" -> Math.tanh(x)
+                                        "ln" -> Math.log(x)
+                                        "log" -> Math.log10(x)
+                                        "abs" -> Math.abs(x)
+                                        else -> throw RuntimeException("Unknown function: $func")
+                                    }
                         } else {
                             throw RuntimeException("Unexpected: " + ch.toChar())
                         }
+                        if (eat('^'.code)) x = Math.pow(x, parseFactor())
+                        if (eat('!'.code)) x = calculateFactorial(x)
                         return x
                     }
                 }
                 .parse()
+    }
+
+    private fun calculateFactorial(n: Double): Double {
+        if (n < 0 || n % 1 != 0.0) return Double.NaN
+        if (n == 0.0) return 1.0
+        var res = 1.0
+        for (i in 1..n.toInt()) res *= i
+        return res
     }
 }
 
@@ -433,13 +511,121 @@ fun EngineeringScreen() {
             verticalArrangement = Arrangement.Center
     ) {
         Icon(
-                imageVector = Icons.Default.Architecture,
-                contentDescription = "Engineering Tools",
+                Icons.Default.Architecture,
+                contentDescription = "Engineering",
                 tint = Color(0xFFFF9F0A),
                 modifier = Modifier.size(72.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text("Engineering Tools", fontSize = 28.sp, color = Color.White)
-        Text("Coming Soon...", color = Color.Gray, modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
+// --- 5. THE PRO SCIENTIFIC CALCULATOR SCREEN ---
+@Composable
+fun ScientificScreen(viewModel: CalculatorViewModel, onBackClick: () -> Unit) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val display by viewModel.display.collectAsState()
+
+    // Toggles for UI changing
+    val isRadMode by viewModel.isRadMode.collectAsState()
+    val isInvMode by viewModel.isInvMode.collectAsState()
+
+    DisposableEffect(Unit) {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+    }
+
+    Column(
+            modifier =
+                    Modifier.fillMaxSize()
+                            .background(Color.Black)
+                            .padding(horizontal = 24.dp, vertical = 8.dp)
+    ) {
+        Row(
+                modifier = Modifier.fillMaxWidth().weight(1.5f),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Icon(
+                    Icons.Default.Calculate,
+                    contentDescription = "Back",
+                    tint = Color(0xFFFF9F0A),
+                    modifier =
+                            Modifier.size(32.dp).clickable { onBackClick() }.padding(bottom = 8.dp)
+            )
+            Text(
+                    text = display,
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Light,
+                    color = Color.White,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f).padding(start = 16.dp, bottom = 4.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        val scientificButtons =
+                listOf(
+                        listOf("rad", "sin", "cos", "tan", "C", "()", "%", "÷"),
+                        listOf("inv", "ln", "log", "√", "7", "8", "9", "×"),
+                        listOf("π", "e", "^", "x²", "4", "5", "6", "−"),
+                        listOf("!", "1/x", "|x|", "x³", "1", "2", "3", "+"),
+                        listOf("rand", "sinh", "cosh", "tanh", "+/-", "0", ".", "=")
+                )
+
+        scientificButtons.forEach { row ->
+            Row(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEachIndexed { index, symbol ->
+                    val isStandardArea = index >= 4
+                    val btnBg =
+                            when {
+                                symbol == "=" -> Color(0xFFFF9F0A)
+                                isStandardArea -> Color(0xFF171717)
+                                symbol == "inv" && isInvMode ->
+                                        Color(0xFF555555) // Highlights when active
+                                else -> Color(0xFF2C2C2C)
+                            }
+                    val txtColor =
+                            when (symbol) {
+                                "C" -> Color(0xFFE57373)
+                                "=" -> Color.Black
+                                else -> Color.White
+                            }
+
+                    // THE UI MAGIC: Changes the text dynamically based on the toggle!
+                    val displaySymbol =
+                            when (symbol) {
+                                "rad" -> if (isRadMode) "rad" else "deg"
+                                "sin" -> if (isInvMode) "sin⁻¹" else "sin"
+                                "cos" -> if (isInvMode) "cos⁻¹" else "cos"
+                                "tan" -> if (isInvMode) "tan⁻¹" else "tan"
+                                else -> symbol
+                            }
+
+                    Button(
+                            onClick = { viewModel.onAction(symbol) },
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            shape = CircleShape,
+                            colors = ButtonDefaults.buttonColors(containerColor = btnBg),
+                            contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(
+                                text = displaySymbol,
+                                fontSize = if (displaySymbol.length > 2) 18.sp else 24.sp,
+                                color = txtColor,
+                                fontWeight = FontWeight.Normal
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
     }
 }
