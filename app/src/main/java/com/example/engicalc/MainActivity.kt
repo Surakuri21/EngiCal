@@ -1,20 +1,31 @@
 package com.example.engicalc
 
+// --- ANIMATION IMPORTS ---
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Architecture
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Straighten
@@ -26,7 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,6 +48,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import java.time.LocalDate
+import java.time.Period
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,10 +67,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainAppScreen() {
     val navController = rememberNavController()
-    // SURVIVES ROTATION:
     var selectedItem by rememberSaveable { mutableStateOf(0) }
-
-    // SHARED BRAIN:
     val sharedViewModel: CalculatorViewModel = viewModel()
 
     val items = listOf("Standard", "Engineering")
@@ -102,7 +116,8 @@ fun MainAppScreen() {
             composable("calculator") {
                 SamsungCalculatorScreen(
                         viewModel = sharedViewModel,
-                        onScientificClick = { navController.navigate("scientific") }
+                        onScientificClick = { navController.navigate("scientific") },
+                        onConversionClick = { navController.navigate("conversion") }
                 )
             }
             composable("engineering") { EngineeringScreen() }
@@ -112,19 +127,39 @@ fun MainAppScreen() {
                         onBackClick = { navController.popBackStack() }
                 )
             }
+            composable("conversion") {
+                ConversionScreen(onBackClick = { navController.popBackStack() })
+            }
         }
     }
 }
 
-// --- 2. THE SAMSUNG CALCULATOR UI ---
+// --- 2. THE STANDARD CALCULATOR UI ---
 @Composable
-fun SamsungCalculatorScreen(viewModel: CalculatorViewModel, onScientificClick: () -> Unit) {
+fun SamsungCalculatorScreen(
+        viewModel: CalculatorViewModel,
+        onScientificClick: () -> Unit,
+        onConversionClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val activity = context as? Activity
     val display by viewModel.display.collectAsState()
     val liveResult by viewModel.liveResult.collectAsState()
+
+    // --- PORTRAIT LOCK ---
+    DisposableEffect(Unit) {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+    }
+
+    // --- STATE MANAGEMENT ---
     val scrollState = rememberScrollState()
+    val liveScrollState = rememberScrollState()
 
     LaunchedEffect(display) { scrollState.animateScrollTo(scrollState.maxValue) }
+    LaunchedEffect(liveResult) { liveScrollState.animateScrollTo(liveScrollState.maxValue) }
 
+    // --- DYNAMIC SCALING ---
     val screenWidth = LocalConfiguration.current.screenWidthDp
     val scale = screenWidth / 360.0
 
@@ -136,8 +171,10 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel, onScientificClick: (
                 else -> 72.sp
             }
 
-    val isMassiveInput = display.length > 35 * scale
+    // Fades away exactly when it hits the edge of the screen (18 characters)
+    val isMassiveInput = display.length > 18 * scale
 
+    // --- MAIN UI LAYOUT ---
     Column(
             modifier =
                     Modifier.fillMaxSize()
@@ -145,6 +182,8 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel, onScientificClick: (
                             .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp),
             verticalArrangement = Arrangement.Bottom
     ) {
+
+        // 1. MAIN DISPLAY
         Column(modifier = Modifier.fillMaxWidth().weight(1f).padding(bottom = 8.dp)) {
             Spacer(modifier = Modifier.weight(1f))
             Column(
@@ -163,20 +202,37 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel, onScientificClick: (
             }
         }
 
-        if (!isMassiveInput) {
-            Text(
-                    text = liveResult,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = Color.Gray,
-                    textAlign = TextAlign.End,
-                    maxLines = 1,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-            )
-        } else {
-            Spacer(modifier = Modifier.height(16.dp))
+        // 2. LIVE RESULT (AUTO-FADING)
+        Box(
+                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 64.dp),
+                contentAlignment = Alignment.BottomEnd
+        ) {
+            Column { // <-- THIS IS THE ONLY ADDITION
+                AnimatedVisibility(
+                        visible = !isMassiveInput && liveResult.isNotEmpty(),
+                        enter = fadeIn(animationSpec = tween(300)),
+                        exit = fadeOut(animationSpec = tween(300))
+                ) {
+                    Row(
+                            modifier =
+                                    Modifier.fillMaxWidth()
+                                            .horizontalScroll(liveScrollState)
+                                            .padding(bottom = 16.dp),
+                            horizontalArrangement = Arrangement.End
+                    ) {
+                        Text(
+                                text = liveResult,
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = Color.Gray,
+                                maxLines = 1,
+                                softWrap = false
+                        )
+                    }
+                }
+            }
         }
-
+        // 3. UTILITY BAR
         Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -184,26 +240,26 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel, onScientificClick: (
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                 Icon(
-                        Icons.Default.History,
+                        imageVector = Icons.Default.History,
                         contentDescription = "History",
                         tint = Color.LightGray,
                         modifier = Modifier.size(24.dp)
                 )
                 Icon(
-                        Icons.Default.Straighten,
+                        imageVector = Icons.Default.Straighten,
                         contentDescription = "Conversions",
                         tint = Color.LightGray,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp).clickable { onConversionClick() }
                 )
                 Icon(
-                        Icons.Default.Functions,
+                        imageVector = Icons.Default.Functions,
                         contentDescription = "Scientific",
                         tint = Color.LightGray,
                         modifier = Modifier.size(24.dp).clickable { onScientificClick() }
                 )
             }
             Icon(
-                    Icons.Default.Backspace,
+                    imageVector = Icons.Default.Backspace,
                     contentDescription = "Backspace",
                     tint = Color.LightGray,
                     modifier = Modifier.size(24.dp).clickable { viewModel.onAction("BACKSPACE") }
@@ -216,6 +272,7 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel, onScientificClick: (
                 modifier = Modifier.padding(bottom = 16.dp)
         )
 
+        // 4. KEYPAD GRID
         val buttons =
                 listOf(
                         listOf("C", "()", "%", "÷"),
@@ -231,18 +288,19 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel, onScientificClick: (
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 row.forEach { symbol ->
-                    val btnBg = if (symbol == "=") Color(0xFFFF9F0A) else Color(0xFF171717)
+                    val isEquals = symbol == "="
+                    val isOperator = symbol in listOf("÷", "×", "−", "+")
+
+                    val btnBg = if (isEquals) Color(0xFFFF9F0A) else Color(0xFF171717)
                     val txtColor =
-                            when (symbol) {
-                                "C" -> Color(0xFFE57373)
-                                "=" -> Color.Black
-                                "÷", "×", "−", "+" -> Color.White
+                            when {
+                                symbol == "C" -> Color(0xFFE57373)
+                                isEquals -> Color.Black
                                 else -> Color.White
                             }
                     val txtWeight =
-                            if (symbol == "=" || symbol in listOf("÷", "×", "−", "+"))
-                                    FontWeight.Normal
-                            else FontWeight.Light
+                            if (isEquals || isOperator) FontWeight.Normal else FontWeight.Light
+
                     Button(
                             onClick = { viewModel.onAction(symbol) },
                             modifier = Modifier.weight(1f).aspectRatio(1f),
@@ -259,8 +317,11 @@ fun SamsungCalculatorScreen(viewModel: CalculatorViewModel, onScientificClick: (
                     }
                 }
             }
-            if (index < buttons.size - 1) Spacer(modifier = Modifier.height(12.dp))
+            if (index < buttons.size - 1) {
+                Spacer(modifier = Modifier.height(12.dp))
+            }
         }
+
         Spacer(modifier = Modifier.height(8.dp))
     }
 }
@@ -281,7 +342,6 @@ class CalculatorViewModel : ViewModel() {
 
     fun onAction(action: String) {
         val current = _display.value
-
         when (action) {
             "C" -> {
                 _display.value = "0"
@@ -355,18 +415,12 @@ class CalculatorViewModel : ViewModel() {
                 val isOperator = action in listOf("÷", "×", "−", "+", ".")
                 val lastChar = current.lastOrNull()?.toString()
                 val isLastCharOperator = lastChar in listOf("÷", "×", "−", "+", ".")
-
-                if (isOperator && isLastCharOperator) {
-                    _display.value = current.dropLast(1) + action
-                } else {
-                    appendToDisplay(action)
-                }
+                if (isOperator && isLastCharOperator) _display.value = current.dropLast(1) + action
+                else appendToDisplay(action)
             }
         }
-
-        if (action != "=" && action != "C" && action != "%" && action != "rad" && action != "inv") {
-            calculateLivePreview(_display.value)
-        }
+        if (action != "=" && action != "C" && action != "%" && action != "rad" && action != "inv")
+                calculateLivePreview(_display.value)
     }
 
     private fun appendToDisplay(value: String) {
@@ -398,7 +452,6 @@ class CalculatorViewModel : ViewModel() {
                         .replace(",", "")
                         .replace("√", "sqrt")
                         .replace(Regex("([0-9])([a-zA-Zπ])"), "$1*$2")
-
         return object : Any() {
                     var pos = -1
                     var ch = 0
@@ -512,12 +565,13 @@ fun EngineeringScreen() {
     ) {
         Icon(
                 Icons.Default.Architecture,
-                contentDescription = "Engineering",
+                contentDescription = "Engineering Tools",
                 tint = Color(0xFFFF9F0A),
                 modifier = Modifier.size(72.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text("Engineering Tools", fontSize = 28.sp, color = Color.White)
+        Text("Coming Soon...", color = Color.Gray, modifier = Modifier.padding(top = 8.dp))
     }
 }
 
@@ -527,10 +581,13 @@ fun ScientificScreen(viewModel: CalculatorViewModel, onBackClick: () -> Unit) {
     val context = LocalContext.current
     val activity = context as? Activity
     val display by viewModel.display.collectAsState()
-
-    // Toggles for UI changing
     val isRadMode by viewModel.isRadMode.collectAsState()
     val isInvMode by viewModel.isInvMode.collectAsState()
+
+    val horizontalScrollState = rememberScrollState()
+    LaunchedEffect(display) {
+        horizontalScrollState.animateScrollTo(horizontalScrollState.maxValue)
+    }
 
     DisposableEffect(Unit) {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -541,29 +598,40 @@ fun ScientificScreen(viewModel: CalculatorViewModel, onBackClick: () -> Unit) {
             modifier =
                     Modifier.fillMaxSize()
                             .background(Color.Black)
-                            .padding(horizontal = 24.dp, vertical = 8.dp)
+                            .padding(start = 32.dp, end = 32.dp, top = 12.dp, bottom = 12.dp)
     ) {
+
+        // The weight remains 1.1f to keep your buttons perfectly scaled!
         Row(
-                modifier = Modifier.fillMaxWidth().weight(1.5f),
-                verticalAlignment = Alignment.Bottom,
+                modifier = Modifier.fillMaxWidth().weight(1.1f),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Icon(
-                    Icons.Default.Calculate,
-                    contentDescription = "Back",
+                    imageVector = Icons.Default.Dialpad,
+                    contentDescription = "Standard Numpad",
                     tint = Color(0xFFFF9F0A),
+                    modifier = Modifier.size(26.dp).clickable { onBackClick() }
+            )
+            Row(
                     modifier =
-                            Modifier.size(32.dp).clickable { onBackClick() }.padding(bottom = 8.dp)
-            )
-            Text(
-                    text = display,
-                    fontSize = 48.sp,
-                    fontWeight = FontWeight.Light,
-                    color = Color.White,
-                    textAlign = TextAlign.End,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f).padding(start = 16.dp, bottom = 4.dp)
-            )
+                            Modifier.weight(1f)
+                                    .padding(start = 24.dp)
+                                    .horizontalScroll(horizontalScrollState),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+            ) {
+                // THE FIX: Dropped from 52.sp to 44.sp so it breathes perfectly inside the row
+                // bounds!
+                Text(
+                        text = display,
+                        fontSize = 44.sp,
+                        fontWeight = FontWeight.Light,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -588,8 +656,7 @@ fun ScientificScreen(viewModel: CalculatorViewModel, onBackClick: () -> Unit) {
                             when {
                                 symbol == "=" -> Color(0xFFFF9F0A)
                                 isStandardArea -> Color(0xFF171717)
-                                symbol == "inv" && isInvMode ->
-                                        Color(0xFF555555) // Highlights when active
+                                symbol == "inv" && isInvMode -> Color(0xFF555555)
                                 else -> Color(0xFF2C2C2C)
                             }
                     val txtColor =
@@ -598,8 +665,6 @@ fun ScientificScreen(viewModel: CalculatorViewModel, onBackClick: () -> Unit) {
                                 "=" -> Color.Black
                                 else -> Color.White
                             }
-
-                    // THE UI MAGIC: Changes the text dynamically based on the toggle!
                     val displaySymbol =
                             when (symbol) {
                                 "rad" -> if (isRadMode) "rad" else "deg"
@@ -618,14 +683,442 @@ fun ScientificScreen(viewModel: CalculatorViewModel, onBackClick: () -> Unit) {
                     ) {
                         Text(
                                 text = displaySymbol,
-                                fontSize = if (displaySymbol.length > 2) 18.sp else 24.sp,
+                                fontSize = if (displaySymbol.length > 2) 16.sp else 22.sp,
                                 color = txtColor,
                                 fontWeight = FontWeight.Normal
                         )
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+    }
+}
+
+// --- 6. THE PREMIUM TOOL HUB (Conversion + Utilities) ---
+@Composable
+fun ConversionScreen(onBackClick: () -> Unit) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val categories =
+            listOf(
+                    "Length",
+                    "Weight",
+                    "Temperature",
+                    "Data",
+                    "Area",
+                    "Speed",
+                    "Age",
+                    "Programmer",
+                    "Finance"
+            )
+    var selectedCategory by rememberSaveable { mutableStateOf("Length") }
+
+    DisposableEffect(Unit) {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(Color.Black).padding(16.dp)) {
+        Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 16.dp)
+        ) {
+            // THE FIX: Swapped the icon to ArrowBack for perfect navigation UX!
+            Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color(0xFFFF9F0A),
+                    modifier = Modifier.size(32.dp).clickable { onBackClick() }
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+
+            val titleText =
+                    if (selectedCategory in listOf("Age", "Programmer", "Finance")) "Advanced Tools"
+                    else "Unit Converter"
+            Text(
+                    text = titleText,
+                    fontSize = 28.sp,
+                    color = Color.White,
+                    fontWeight = FontWeight.Light
+            )
+        }
+
+        val scrollState = rememberScrollState()
+        Row(
+                modifier =
+                        Modifier.fillMaxWidth()
+                                .horizontalScroll(scrollState)
+                                .padding(bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            categories.forEach { category ->
+                val isSelected = selectedCategory == category
+                Button(
+                        onClick = { selectedCategory = category },
+                        colors =
+                                ButtonDefaults.buttonColors(
+                                        containerColor =
+                                                if (isSelected) Color(0xFFFF9F0A)
+                                                else Color(0xFF171717)
+                                ),
+                        shape = CircleShape
+                ) { Text(text = category, color = if (isSelected) Color.Black else Color.White) }
+            }
+        }
+
+        when (selectedCategory) {
+            "Age" -> AgeCalculatorSection()
+            "Programmer" -> PlaceholderToolScreen("Programmer Calculator")
+            "Finance" -> PlaceholderToolScreen("Financial Tools")
+            else -> StandardConverterSection(selectedCategory)
+        }
+    }
+}
+
+// --- SUB-SCREEN: STANDARD UNIT CONVERTER ---
+@Composable
+fun StandardConverterSection(category: String) {
+    val unitMap =
+            mapOf(
+                    "Length" to listOf("Meters", "Centimeters", "Kilometers", "Feet", "Inches"),
+                    "Weight" to listOf("Kilograms", "Grams", "Pounds", "Ounces"),
+                    "Temperature" to listOf("Celsius", "Fahrenheit", "Kelvin"),
+                    "Data" to listOf("Megabytes", "Gigabytes", "Terabytes", "Kilobytes", "Bytes"),
+                    "Area" to listOf("Sq Meters", "Sq Kilometers", "Hectares", "Acres", "Sq Feet"),
+                    "Speed" to listOf("m/s", "km/h", "mph", "knots")
+            )
+
+    var inputValue by rememberSaveable { mutableStateOf("") }
+    val currentUnits = unitMap[category] ?: listOf("Unknown")
+    var fromUnit by remember(category) { mutableStateOf(currentUnits[0]) }
+    var toUnit by
+            remember(category) { mutableStateOf(currentUnits.getOrElse(1) { currentUnits[0] }) }
+
+    val result =
+            remember(inputValue, fromUnit, toUnit, category) {
+                val input = inputValue.toDoubleOrNull() ?: return@remember ""
+                var finalValue = 0.0
+
+                when (category) {
+                    "Length" -> {
+                        val inM =
+                                when (fromUnit) {
+                                    "Meters" -> input
+                                    "Centimeters" -> input / 100.0
+                                    "Kilometers" -> input * 1000.0
+                                    "Feet" -> input * 0.3048
+                                    "Inches" -> input * 0.0254
+                                    else -> input
+                                }
+                        finalValue =
+                                when (toUnit) {
+                                    "Meters" -> inM
+                                    "Centimeters" -> inM * 100.0
+                                    "Kilometers" -> inM / 1000.0
+                                    "Feet" -> inM / 0.3048
+                                    "Inches" -> inM / 0.0254
+                                    else -> inM
+                                }
+                    }
+                    "Weight" -> {
+                        val inG =
+                                when (fromUnit) {
+                                    "Grams" -> input
+                                    "Kilograms" -> input * 1000.0
+                                    "Pounds" -> input * 453.592
+                                    "Ounces" -> input * 28.3495
+                                    else -> input
+                                }
+                        finalValue =
+                                when (toUnit) {
+                                    "Grams" -> inG
+                                    "Kilograms" -> inG / 1000.0
+                                    "Pounds" -> inG / 453.592
+                                    "Ounces" -> inG / 28.3495
+                                    else -> inG
+                                }
+                    }
+                    "Temperature" -> {
+                        val inC =
+                                when (fromUnit) {
+                                    "Celsius" -> input
+                                    "Fahrenheit" -> (input - 32) * 5.0 / 9.0
+                                    "Kelvin" -> input - 273.15
+                                    else -> input
+                                }
+                        finalValue =
+                                when (toUnit) {
+                                    "Celsius" -> inC
+                                    "Fahrenheit" -> (inC * 9.0 / 5.0) + 32
+                                    "Kelvin" -> inC + 273.15
+                                    else -> inC
+                                }
+                    }
+                    "Data" -> {
+                        val inMB =
+                                when (fromUnit) {
+                                    "Megabytes" -> input
+                                    "Gigabytes" -> input * 1024
+                                    "Terabytes" -> input * 1048576
+                                    "Kilobytes" -> input / 1024
+                                    "Bytes" -> input / 1048576
+                                    else -> input
+                                }
+                        finalValue =
+                                when (toUnit) {
+                                    "Megabytes" -> inMB
+                                    "Gigabytes" -> inMB / 1024
+                                    "Terabytes" -> inMB / 1048576
+                                    "Kilobytes" -> inMB * 1024
+                                    "Bytes" -> inMB * 1048576
+                                    else -> inMB
+                                }
+                    }
+                    "Area" -> {
+                        val inSqM =
+                                when (fromUnit) {
+                                    "Sq Meters" -> input
+                                    "Sq Kilometers" -> input * 1000000
+                                    "Hectares" -> input * 10000
+                                    "Acres" -> input * 4046.86
+                                    "Sq Feet" -> input * 0.092903
+                                    else -> input
+                                }
+                        finalValue =
+                                when (toUnit) {
+                                    "Sq Meters" -> inSqM
+                                    "Sq Kilometers" -> inSqM / 1000000
+                                    "Hectares" -> inSqM / 10000
+                                    "Acres" -> inSqM / 4046.86
+                                    "Sq Feet" -> inSqM / 0.092903
+                                    else -> inSqM
+                                }
+                    }
+                    "Speed" -> {
+                        val inKmh =
+                                when (fromUnit) {
+                                    "km/h" -> input
+                                    "m/s" -> input * 3.6
+                                    "mph" -> input * 1.60934
+                                    "knots" -> input * 1.852
+                                    else -> input
+                                }
+                        finalValue =
+                                when (toUnit) {
+                                    "km/h" -> inKmh
+                                    "m/s" -> inKmh / 3.6
+                                    "mph" -> inKmh / 1.60934
+                                    "knots" -> inKmh / 1.852
+                                    else -> inKmh
+                                }
+                    }
+                }
+                java.text.DecimalFormat("#,###.######").format(finalValue)
+            }
+
+    val scrollState = rememberScrollState()
+    LaunchedEffect(result) { scrollState.animateScrollTo(scrollState.maxValue) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text("From:", color = Color.Gray, fontSize = 16.sp)
+        OutlinedTextField(
+                value = inputValue,
+                onValueChange = { inputValue = it },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                textStyle = TextStyle(color = Color.White, fontSize = 24.sp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                colors =
+                        OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFFF9F0A),
+                                unfocusedBorderColor = Color.DarkGray
+                        )
+        )
+        UnitDropdown(
+                selectedUnit = fromUnit,
+                units = currentUnits,
+                onUnitSelected = { fromUnit = it }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text("To:", color = Color.Gray, fontSize = 16.sp)
+
+        // THE FIX: Changed Arrangement.End to Arrangement.Start so it aligns to the left!
+        Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(scrollState),
+                horizontalArrangement = Arrangement.Start
+        ) {
+            Text(
+                    text = if (result.isEmpty()) "0" else result,
+                    color = Color(0xFFFF9F0A),
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Light,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(vertical = 8.dp)
+            )
+        }
+        UnitDropdown(selectedUnit = toUnit, units = currentUnits, onUnitSelected = { toUnit = it })
+    }
+}
+
+// --- SUB-SCREEN: AGE CALCULATOR ---
+@Composable
+fun AgeCalculatorSection() {
+    val context = LocalContext.current
+    var birthDate by rememberSaveable { mutableStateOf<String?>(null) }
+    val parsedBirthDate = birthDate?.let { LocalDate.parse(it) }
+    val today = LocalDate.now()
+
+    val datePickerDialog =
+            android.app.DatePickerDialog(
+                    context,
+                    android.R.style.Theme_Holo_Light_Dialog_MinWidth,
+                    { _, year, month, dayOfMonth ->
+                        birthDate = LocalDate.of(year, month + 1, dayOfMonth).toString()
+                    },
+                    parsedBirthDate?.year ?: today.year,
+                    (parsedBirthDate?.monthValue ?: today.monthValue) - 1,
+                    parsedBirthDate?.dayOfMonth ?: today.dayOfMonth
+            )
+    datePickerDialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+    datePickerDialog.datePicker.maxDate = System.currentTimeMillis()
+
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(modifier = Modifier.height(32.dp))
+        Icon(
+                Icons.Default.History,
+                contentDescription = "Age",
+                tint = Color(0xFFFF9F0A),
+                modifier = Modifier.size(64.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Calculate Exact Age", fontSize = 24.sp, color = Color.White)
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+                onClick = { datePickerDialog.show() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C2C2C)),
+                modifier = Modifier.fillMaxWidth().height(64.dp),
+                shape = CircleShape
+        ) {
+            val buttonText =
+                    parsedBirthDate?.format(DateTimeFormatter.ofPattern("MMMM dd, yyyy"))
+                            ?: "Select Date of Birth"
+            Text(buttonText, fontSize = 18.sp, color = Color.White)
+        }
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        if (parsedBirthDate != null) {
+            val period = Period.between(parsedBirthDate, today)
+            var nextBday = parsedBirthDate.withYear(today.year)
+            if (nextBday.isBefore(today) || nextBday.isEqual(today))
+                    nextBday = nextBday.plusYears(1)
+            val daysUntil = ChronoUnit.DAYS.between(today, nextBday)
+
+            Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF171717)),
+                    modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("You are exactly:", color = Color.Gray, fontSize = 16.sp)
+                    Text(
+                            "${period.years}",
+                            color = Color(0xFFFF9F0A),
+                            fontSize = 64.sp,
+                            fontWeight = FontWeight.Light
+                    )
+                    Text("Years Old", color = Color.White, fontSize = 20.sp)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                            "${period.months} Months & ${period.days} Days",
+                            color = Color.LightGray,
+                            fontSize = 18.sp
+                    )
+                    HorizontalDivider(
+                            color = Color.DarkGray,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                    Text(
+                            "Next Birthday: $daysUntil days",
+                            color = Color(0xFFFF9F0A),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+// --- SUB-SCREEN: PLACEHOLDER FOR UPCOMING TOOLS ---
+@Composable
+fun PlaceholderToolScreen(title: String) {
+    val displayIcon =
+            when (title) {
+                "Programmer Calculator" -> Icons.Default.Code
+                "Financial Tools" -> Icons.Default.AttachMoney
+                else -> Icons.Default.Architecture
+            }
+
+    Column(
+            modifier = Modifier.fillMaxWidth().padding(top = 64.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+                displayIcon,
+                contentDescription = "Tool",
+                tint = Color.DarkGray,
+                modifier = Modifier.size(64.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(title, fontSize = 24.sp, color = Color.White)
+        Text("Coming Soon...", color = Color.Gray, modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
+// --- REUSABLE COMPONENT ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UnitDropdown(selectedUnit: String, units: List<String>, onUnitSelected: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+        OutlinedTextField(
+                value = selectedUnit,
+                onValueChange = {},
+                readOnly = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                textStyle = TextStyle(color = Color.White),
+                colors =
+                        OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.DarkGray,
+                                unfocusedBorderColor = Color.DarkGray,
+                                focusedTrailingIconColor = Color.White,
+                                unfocusedTrailingIconColor = Color.Gray
+                        )
+        )
+        ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(Color(0xFF171717))
+        ) {
+            units.forEach { selectionOption ->
+                DropdownMenuItem(
+                        text = { Text(selectionOption, color = Color.White) },
+                        onClick = {
+                            onUnitSelected(selectionOption)
+                            expanded = false
+                        }
+                )
+            }
         }
     }
 }
