@@ -1,0 +1,3 @@
+[90mC:\Users\Adria\VSCode_Projects\EngiCalc\[0mbuild.gradle.kts[90m:[0m6[90m:1:[0m Needless blank line(s) [90m(no-consecutive-blank-lines)[0m
+[90mC:\Users\Adria\VSCode_Projects\EngiCalc\[0mbuild.gradle.kts[90m:[0m12[90m:1:[0m Unexpected blank line(s) before "}" [90m(no-blank-line-before-rbrace)[0m
+[90mC:\Users\Adria\VSCode_Projects\EngiCalc\[0mbuild.gradle.kts[90m:[0m15[90m:1:[0m Needless blank line(s) [90m(no-consecutive-blank-lines)[0m
