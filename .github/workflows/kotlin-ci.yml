@@ -39,4 +39,14 @@ jobs:
       - name: Execute Tests
         run: ./gradlew test --no-daemon
 
-      # Temporarily removed OWASP dependencyCheckAnalyze until we configure the Gradle plugin locally.
+      # Phase 2: Build the Android Artifact
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      # FinOps/Storage: Upload the generated APK
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engicalc-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
