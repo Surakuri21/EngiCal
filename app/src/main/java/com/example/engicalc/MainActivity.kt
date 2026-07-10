@@ -55,6 +55,8 @@ import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.compose.runtime.getValue
+import androidx.navigation.compose.currentBackStackEntryAsState
 
 // --- 1. THE NAVIGATION SHELL ---
 class MainActivity : ComponentActivity() {
@@ -73,16 +75,22 @@ fun MainAppScreen() {
     val items = listOf("Standard", "Engineering")
     val itemIcons = listOf(Icons.Default.Calculate, Icons.Default.Architecture)
 
+    // NEW: Track the current screen
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+
+
     Scaffold(
             bottomBar = {
-                NavigationBar(containerColor = Color.Black, contentColor = Color.White) {
-                    items.forEachIndexed { index, item ->
-                        NavigationBarItem(
+                if (currentRoute == "calculator" || currentRoute == "engineering" || currentRoute == null) {
+                    NavigationBar(containerColor = Color.Black, contentColor = Color.White) {
+                        items.forEachIndexed { index, item ->
+                            NavigationBarItem(
                                 icon = {
                                     Icon(
-                                            itemIcons[index],
-                                            contentDescription = item,
-                                            modifier = Modifier.size(26.dp)
+                                        itemIcons[index],
+                                        contentDescription = item,
+                                        modifier = Modifier.size(26.dp)
                                     )
                                 },
                                 label = { Text(item) },
@@ -97,13 +105,14 @@ fun MainAppScreen() {
                                     }
                                 },
                                 colors =
-                                        NavigationBarItemDefaults.colors(
-                                                selectedIconColor = Color.Black,
-                                                unselectedIconColor = Color.Gray,
-                                                selectedTextColor = Color.White,
-                                                indicatorColor = Color(0xFFFF9F0A)
-                                        )
-                        )
+                                    NavigationBarItemDefaults.colors(
+                                        selectedIconColor = Color.Black,
+                                        unselectedIconColor = Color.Gray,
+                                        selectedTextColor = Color.White,
+                                        indicatorColor = Color(0xFFFF9F0A)
+                                    )
+                            )
+                        }
                     }
                 }
             }
@@ -575,125 +584,9 @@ fun EngineeringScreen() {
     }
 }
 
-// --- 5. THE PRO SCIENTIFIC CALCULATOR SCREEN ---
-@Composable
-fun ScientificScreen(viewModel: CalculatorViewModel, onBackClick: () -> Unit) {
-    val context = LocalContext.current
-    val activity = context as? Activity
-    val display by viewModel.display.collectAsState()
-    val isRadMode by viewModel.isRadMode.collectAsState()
-    val isInvMode by viewModel.isInvMode.collectAsState()
 
-    val horizontalScrollState = rememberScrollState()
-    LaunchedEffect(display) {
-        horizontalScrollState.animateScrollTo(horizontalScrollState.maxValue)
-    }
 
-    DisposableEffect(Unit) {
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
-    }
 
-    Column(
-            modifier =
-                    Modifier.fillMaxSize()
-                            .background(Color.Black)
-                            .padding(start = 32.dp, end = 32.dp, top = 12.dp, bottom = 12.dp)
-    ) {
-
-        // The weight remains 1.1f to keep your buttons perfectly scaled!
-        Row(
-                modifier = Modifier.fillMaxWidth().weight(1.1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Icon(
-                    imageVector = Icons.Default.Dialpad,
-                    contentDescription = "Standard Numpad",
-                    tint = Color(0xFFFF9F0A),
-                    modifier = Modifier.size(26.dp).clickable { onBackClick() }
-            )
-            Row(
-                    modifier =
-                            Modifier.weight(1f)
-                                    .padding(start = 24.dp)
-                                    .horizontalScroll(horizontalScrollState),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-            ) {
-                // THE FIX: Dropped from 52.sp to 44.sp so it breathes perfectly inside the row
-                // bounds!
-                Text(
-                        text = display,
-                        fontSize = 44.sp,
-                        fontWeight = FontWeight.Light,
-                        color = Color.White,
-                        maxLines = 1,
-                        softWrap = false
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        val scientificButtons =
-                listOf(
-                        listOf("rad", "sin", "cos", "tan", "C", "()", "%", "÷"),
-                        listOf("inv", "ln", "log", "√", "7", "8", "9", "×"),
-                        listOf("π", "e", "^", "x²", "4", "5", "6", "−"),
-                        listOf("!", "1/x", "|x|", "x³", "1", "2", "3", "+"),
-                        listOf("rand", "sinh", "cosh", "tanh", "+/-", "0", ".", "=")
-                )
-
-        scientificButtons.forEach { row ->
-            Row(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                row.forEachIndexed { index, symbol ->
-                    val isStandardArea = index >= 4
-                    val btnBg =
-                            when {
-                                symbol == "=" -> Color(0xFFFF9F0A)
-                                isStandardArea -> Color(0xFF171717)
-                                symbol == "inv" && isInvMode -> Color(0xFF555555)
-                                else -> Color(0xFF2C2C2C)
-                            }
-                    val txtColor =
-                            when (symbol) {
-                                "C" -> Color(0xFFE57373)
-                                "=" -> Color.Black
-                                else -> Color.White
-                            }
-                    val displaySymbol =
-                            when (symbol) {
-                                "rad" -> if (isRadMode) "rad" else "deg"
-                                "sin" -> if (isInvMode) "sin⁻¹" else "sin"
-                                "cos" -> if (isInvMode) "cos⁻¹" else "cos"
-                                "tan" -> if (isInvMode) "tan⁻¹" else "tan"
-                                else -> symbol
-                            }
-
-                    Button(
-                            onClick = { viewModel.onAction(symbol) },
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            shape = CircleShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = btnBg),
-                            contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                                text = displaySymbol,
-                                fontSize = if (displaySymbol.length > 2) 16.sp else 22.sp,
-                                color = txtColor,
-                                fontWeight = FontWeight.Normal
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-        }
-    }
-}
 
 // --- 6. THE PREMIUM TOOL HUB (Conversion + Utilities) ---
 @Composable
