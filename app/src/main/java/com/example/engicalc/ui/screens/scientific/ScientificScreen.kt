@@ -1,4 +1,4 @@
-package com.example.engicalc
+package com.example.engicalc.com.example.engicalc.ui.screens.scientific
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+ import com.example.engicalc.logic.CalculatorViewModel
 
 // --- 1. STATEFUL WRAPPER (Connects to your ViewModel) ---
 @Composable
