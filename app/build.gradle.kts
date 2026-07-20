@@ -10,6 +10,13 @@ android {
         version = release(36) {
             minorApiLevel = 1
         }
+
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_1_8
+            targetCompatibility = JavaVersion.VERSION_1_8
+
+            isCoreLibraryDesugaringEnabled = true
+        }
     }
 
     defaultConfig {
@@ -58,4 +65,5 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
