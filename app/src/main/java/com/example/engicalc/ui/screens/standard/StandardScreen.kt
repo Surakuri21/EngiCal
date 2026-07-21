@@ -91,11 +91,12 @@ fun SamsungCalculatorScreen(
             ) {
                 Text(
                     text = display,
-                    fontSize = mainTextSize,
-                    fontWeight = FontWeight.Light,
+                    // JetBrains Mono font family
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = mainTextSize,
+                        lineHeight = (mainTextSize.value * 1.2).sp),
                     color = Color.White,
                     textAlign = TextAlign.End,
-                    lineHeight = (mainTextSize.value * 1.2).sp,
                     modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
                 )
             }
@@ -121,8 +122,7 @@ fun SamsungCalculatorScreen(
                     ) {
                         Text(
                             text = liveResult,
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Normal,
+                            style = MaterialTheme.typography.displayMedium,
                             color = Color.Gray,
                             maxLines = 1,
                             softWrap = false
@@ -207,9 +207,11 @@ fun SamsungCalculatorScreen(
                     ) {
                         Text(
                             text = symbol,
-                            fontSize = 32.sp,
-                            color = txtColor,
-                            fontWeight = txtWeight
+                            style = MaterialTheme.typography.displayMedium.copy(
+                                fontWeight = txtWeight
+                            ),
+                            color = txtColor
+
                         )
                     }
                 }
