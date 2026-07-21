@@ -8,7 +8,7 @@ android {
     namespace = "com.example.engicalc"
 
     // Use the standard integer for the latest STABLE release (Android 14)
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.engicalc"
