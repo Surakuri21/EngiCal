@@ -6,18 +6,9 @@ plugins {
 
 android {
     namespace = "com.example.engicalc"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
 
-        compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_1_8
-            targetCompatibility = JavaVersion.VERSION_1_8
-
-            isCoreLibraryDesugaringEnabled = true
-        }
-    }
+    // Use the standard integer for the latest STABLE release (Android 14)
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.example.engicalc"
